@@ -125,6 +125,21 @@ pub enum CandidateWindow {
     Conversion,
 }
 
+/// Which conversion key offers the predictive matches: candidates whose
+/// reading extends the typed one (けいざい -> 経済移民), from the
+/// dictionaries and the learning cache.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PredictionKey {
+    /// Space shows them behind the exact matches; Tab converts without the
+    /// learning cache, so a noisy history can be escaped.
+    #[default]
+    Space,
+    /// Space converts only what was typed; Tab adds the predictive matches,
+    /// learning included (mozc's PredictAndConvert).
+    Tab,
+}
+
 /// Aux-line settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DisplaySettings {
@@ -216,6 +231,10 @@ pub struct ConversionSettings {
     /// (1 = from the first char). Below it the preedit stays kana and the
     /// model is not called while typing; Space still converts.
     pub live_min_chars: usize,
+    /// Which key offers the predictive matches: `space` (Space shows them,
+    /// Tab skips the learning cache) or `tab` (Space converts only what was
+    /// typed, Tab adds them with learning).
+    pub prediction_key: PredictionKey,
 }
 
 /// Learning cache settings
@@ -528,6 +547,18 @@ max_surface_chars = 10
             CandidateWindow::Conversion
         );
         assert!(!settings.display.verbose);
+    }
+
+    #[test]
+    fn test_prediction_key_setting() {
+        assert_eq!(
+            Settings::default().conversion.prediction_key,
+            PredictionKey::Space
+        );
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "[conversion]\nprediction_key = \"tab\"").unwrap();
+        let settings = Settings::load_from(file.path()).unwrap();
+        assert_eq!(settings.conversion.prediction_key, PredictionKey::Tab);
     }
 
     #[test]

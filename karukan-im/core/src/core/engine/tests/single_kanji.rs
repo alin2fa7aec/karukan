@@ -9,7 +9,7 @@ fn mixed_list(
     reading: &str,
 ) -> Vec<(String, CandidateSource, Option<String>)> {
     engine
-        .build_conversion_candidates(reading, reading, "", 9, LearningLookup::Use)
+        .build_conversion_candidates(reading, reading, "", 9, ConversionLookup::FULL)
         .into_iter()
         .map(|c| (c.text, c.source, c.description))
         .collect()

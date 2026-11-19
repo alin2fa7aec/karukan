@@ -44,7 +44,9 @@ impl InputMethodEngine {
     pub(super) fn jump_to_source(&mut self, source: CandidateSource) -> EngineResult {
         match &self.state {
             InputState::Conversion { .. } => self.apply_candidate_filter(source),
-            InputState::Composing { .. } => self.start_conversion_with_filter(source),
+            InputState::Composing { .. } => {
+                self.start_conversion_with_filter(source, self.space_lookup())
+            }
             InputState::Empty => EngineResult::not_consumed(),
         }
     }
@@ -75,7 +77,7 @@ impl InputMethodEngine {
     /// immediately narrow it one step, so the filtered view opens without
     /// Space.
     pub(super) fn start_filtered_conversion(&mut self, direction: FilterDirection) -> EngineResult {
-        if !self.enter_conversion_for_filter() {
+        if !self.enter_conversion_for_filter(self.space_lookup()) {
             return EngineResult::consumed();
         }
         self.cycle_candidate_filter(direction)
@@ -83,8 +85,12 @@ impl InputMethodEngine {
 
     /// Enter the Conversion state already narrowed to `source` — used when
     /// typing refines a narrowed view, so the view survives the keystroke.
-    pub(super) fn start_conversion_with_filter(&mut self, source: CandidateSource) -> EngineResult {
-        if !self.enter_conversion_for_filter() {
+    pub(super) fn start_conversion_with_filter(
+        &mut self,
+        source: CandidateSource,
+        lookup: ConversionLookup,
+    ) -> EngineResult {
+        if !self.enter_conversion_for_filter(lookup) {
             return EngineResult::consumed();
         }
         self.apply_candidate_filter(source)
@@ -93,7 +99,11 @@ impl InputMethodEngine {
     /// Enter the Conversion state as an empty shell for a filtered view —
     /// no mixed list is built (the view re-queries its source), so no model
     /// inference runs here. Returns false when there is nothing to convert.
-    fn enter_conversion_for_filter(&mut self) -> bool {
+    /// `lookup` is what the mixed list draws on if it is rebuilt: Space's
+    /// ([`Self::space_lookup`]) when a key opens the view from
+    /// composing, since the full list it stands in front of is Space's, and
+    /// the previous conversion's when typing or Ctrl+J re-enters it.
+    fn enter_conversion_for_filter(&mut self, lookup: ConversionLookup) -> bool {
         let reading = self.input_buf.settled_reading(&self.converters.romaji);
         if reading.is_empty() {
             return false;
@@ -101,7 +111,7 @@ impl InputMethodEngine {
         // Left shown, the stale live chunks would survive the commit and
         // render as the next composition's preedit.
         self.live.shown = false;
-        self.enter_conversion_state(&reading, CandidateList::new(Vec::new()));
+        self.enter_conversion_state(&reading, CandidateList::new(Vec::new()), lookup);
         true
     }
 

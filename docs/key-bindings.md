@@ -24,6 +24,8 @@ Karukan のキーバインド一覧です。共通キーバインドは Linux (f
 | Ctrl+T / Ctrl+R | 変換を開始してソース絞り込みビューへ（Ctrl+T は📝学習から、Ctrl+R は🔄記号変換から） |
 | Shift+Space | 全角スペースを入力。入力中は設定した幅の空白を挟む（[詳細](symbols.md)） |
 
+`[conversion] prediction_key = "tab"` にすると、Space と Tab の役割が変わります。Space は打った読みと完全一致する候補だけで変換し、Tab は入力より長い読みの候補 (辞書と学習履歴の前方一致) も含めて変換します。このとき Tab でも学習履歴を使います。詳しくは [Configuration](configuration.md#space-と-tab-の変換) を参照してください。
+
 未入力の状態で `:` を打つと絵文字モードになり、`:smile` のようなクエリで絵文字を検索できます。Enterで先頭の絵文字候補を確定、Escapeで入力した文字列をそのまま確定します。
 
 `Ctrl+1〜9`・`Ctrl+J`・`Ctrl+I`・`Ctrl+T` / `Ctrl+R` は変換モードでも使えます。どちらのモードでも「いま画面に出ているもの」に対して働きます。

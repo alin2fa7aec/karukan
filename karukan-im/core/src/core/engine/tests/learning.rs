@@ -12,7 +12,7 @@ fn build_candidates_includes_learning_when_not_skipped() {
     let mut engine = engine_with_learned("あい", "藍");
 
     let texts: Vec<String> = engine
-        .build_conversion_candidates("あい", "あい", "", 9, LearningLookup::Use)
+        .build_conversion_candidates("あい", "あい", "", 9, ConversionLookup::FULL)
         .into_iter()
         .map(|c| c.text)
         .collect();
@@ -30,8 +30,12 @@ fn build_candidates_omits_learning_when_skipped() {
 
     // 藍 is also a single-kanji candidate for あい, so check the source,
     // not the text.
+    let lookup = ConversionLookup {
+        learning: LearningLookup::Skip,
+        ..ConversionLookup::FULL
+    };
     let learned: Vec<String> = engine
-        .build_conversion_candidates("あい", "あい", "", 9, LearningLookup::Skip)
+        .build_conversion_candidates("あい", "あい", "", 9, lookup)
         .into_iter()
         .filter(|c| c.source == CandidateSource::Learning)
         .map(|c| c.text)

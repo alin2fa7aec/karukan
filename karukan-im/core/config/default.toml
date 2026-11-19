@@ -61,6 +61,10 @@ live_conversion = true
 # 数えるのはかなと漢字だけで、未確定のローマ字や記号は含めない。
 # 届くまではひらがなのまま辞書の候補を出す。Space での変換には影響しない。
 live_min_chars = 1
+# 入力より長い読みの候補 (辞書と学習履歴の前方一致) をどちらのキーで出すか。
+# "space": Space が完全一致の候補の後ろに並べる。Tab は学習履歴を使わずに変換する。
+# "tab": Space は打った読みと完全一致する候補だけで変換し、Tab がそれらも含めて変換する。このとき Tab でも学習履歴を使う。
+prediction_key = "space"
 # ユーザー辞書: ~/.local/share/karukan-im/user_dicts/ に辞書ファイルを配置（Mozc TSV or KRKN binary）
 
 # 変換モデル。model / light_model はここのキーを参照する。値は 2 通り:

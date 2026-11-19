@@ -3,6 +3,7 @@
 //! Defines the states of the IME and transitions between them.
 
 use super::candidate::{CandidateList, CandidateSource};
+use super::engine::ConversionLookup;
 use super::preedit::Preedit;
 
 /// The current state of the IME
@@ -28,6 +29,11 @@ pub enum InputState {
         reading: String,
         /// Active Ctrl+R source filter; `None` shows the full list
         filter: Option<CandidateSource>,
+        /// What the mixed list draws on, decided by the key that started
+        /// the conversion. Rebuilding it (Ctrl+J, deleting a learning
+        /// entry) reuses this, and it ends with the state, so no later
+        /// conversion can pick up a stale one.
+        lookup: ConversionLookup,
     },
 }
 
@@ -59,6 +65,14 @@ impl InputState {
     pub fn filter(&self) -> Option<CandidateSource> {
         match self {
             Self::Conversion { filter, .. } => *filter,
+            _ => None,
+        }
+    }
+
+    /// What the conversion draws on, if in the Conversion state.
+    pub fn conversion_lookup(&self) -> Option<ConversionLookup> {
+        match self {
+            Self::Conversion { lookup, .. } => Some(*lookup),
             _ => None,
         }
     }

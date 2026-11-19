@@ -105,7 +105,7 @@ impl CandidateBuilder {
 
 impl InputMethodEngine {
     /// Start kanji conversion for the current buffer (Space/Down/Tab).
-    pub(super) fn start_conversion(&mut self, learning: LearningLookup) -> EngineResult {
+    pub(super) fn start_conversion(&mut self, lookup: ConversionLookup) -> EngineResult {
         // Resolve the reading without touching the composition, so Esc
         // returns to an editable buffer with the romaji tail still live.
         let reading = self.input_buf.settled_reading(&self.converters.romaji);
@@ -129,7 +129,7 @@ impl InputMethodEngine {
             &base,
             &pending,
             self.config.num_candidates,
-            learning,
+            lookup,
         );
 
         let seen: HashSet<&str> = candidates.iter().map(|c| c.text.as_str()).collect();
@@ -151,7 +151,7 @@ impl InputMethodEngine {
         }
 
         let candidate_list = self.to_conversion_candidate_list(candidates, &reading);
-        self.enter_conversion_state(&reading, candidate_list)
+        self.enter_conversion_state(&reading, candidate_list, lookup)
     }
 
     /// Map builder output to the public [`CandidateList`] shown in the
@@ -169,7 +169,8 @@ impl InputMethodEngine {
         )
     }
 
-    /// Transition to Conversion state with the given reading and candidate list.
+    /// Transition to Conversion state with the given reading and candidate list,
+    /// remembering `lookup` for rebuilds of the same conversion.
     ///
     /// Sets up the preedit (highlighted selected text), updates the state, and
     /// returns an EngineResult with preedit, candidates, and aux text actions.
@@ -177,6 +178,7 @@ impl InputMethodEngine {
         &mut self,
         reading: &str,
         candidates: CandidateList,
+        lookup: ConversionLookup,
     ) -> EngineResult {
         let selected_text = candidates.selected_text().unwrap_or(reading).to_string();
 
@@ -188,6 +190,7 @@ impl InputMethodEngine {
             reading: reading.to_string(),
             // A fresh conversion always starts unfiltered
             filter: None,
+            lookup,
         };
 
         // After the state assignment: the aux header reads the active filter.
@@ -286,6 +289,22 @@ impl InputMethodEngine {
         DictionaryHits { exact, predictive }
     }
 
+    /// Exact dictionary matches for the settled `reading`, nothing
+    /// predictive: what a conversion asked to answer only what was typed
+    /// draws on. The tail is already settled into `reading`, so there is no
+    /// `pending` to narrow by.
+    fn exact_dictionary_matches(&self, reading: &str) -> DictionaryHits {
+        // A predictive budget of 0 skips the prefix search altogether.
+        self.search_dictionaries(
+            reading,
+            "",
+            usize::MAX,
+            0,
+            MIN_PREDICTIVE_PREFIX_CHARS,
+            None,
+        )
+    }
+
     /// Classify the unresolved romaji tail for predictive lookup.
     fn tail_constraint(&self, pending: &str) -> TailConstraint {
         if pending.is_empty() {
@@ -310,15 +329,24 @@ impl InputMethodEngine {
     /// words, けいざい would otherwise open on 経済移民 with 経済 pages away.
     ///
     /// `base`/`pending` split the reading for the dictionary lookup (the
-    /// unresolved romaji tail narrows prediction).
+    /// unresolved romaji tail narrows prediction). With
+    /// [`PredictionLookup::Skip`] no predictive match enters at all, from the
+    /// dictionaries or the learning cache, and the dictionaries are asked
+    /// for the settled `reading` itself, since there is no prefix to narrow.
+    /// The two paths agree on exact matches but for one case: with
+    /// prediction an exact hit is never taken while a romaji tail is
+    /// pending, and without it the settled reading is looked up, which can
+    /// hit only when the tail flushes to kana. A tail that stays latin (the
+    /// `n` of `kan` settles as かn) matches no dictionary reading either way.
     pub(super) fn build_conversion_candidates(
         &mut self,
         reading: &str,
         base: &str,
         pending: &str,
         num_candidates: usize,
-        learning: LearningLookup,
+        lookup: ConversionLookup,
     ) -> Vec<AnnotatedCandidate> {
+        let predictive = lookup.prediction == PredictionLookup::Use;
         // No converter (still loading in the background, or loading failed)
         // just means no model candidates: symbol-only and early keystrokes
         // still get dictionary/rewriter/fallback candidates. Loading here
@@ -333,8 +361,12 @@ impl InputMethodEngine {
         // 1. Learning cache candidates (highest priority).
         //    Force-inserted so they win against duplicate text from later sources.
         //    Skipped when the caller asks for a learning-free conversion (Tab key).
-        if learning == LearningLookup::Use {
+        if lookup.learning == LearningLookup::Use {
             for c in self.lookup_learning_candidates(reading) {
+                // A prefix match carries the longer reading it was learned under.
+                if !predictive && c.reading.as_deref() != Some(reading) {
+                    continue;
+                }
                 // Exact matches have reading == input reading; use None to avoid redundancy
                 let cand_reading = c.reading.filter(|r| r != reading);
                 builder.push_force(
@@ -346,14 +378,18 @@ impl InputMethodEngine {
 
         // 2. Exact user dictionary matches: what the user registered for
         //    this very reading outranks the model.
-        let dictionary = self.search_dictionaries(
-            base,
-            pending,
-            usize::MAX,
-            usize::MAX,
-            MIN_PREDICTIVE_PREFIX_CHARS,
-            None,
-        );
+        let dictionary = if predictive {
+            self.search_dictionaries(
+                base,
+                pending,
+                usize::MAX,
+                usize::MAX,
+                MIN_PREDICTIVE_PREFIX_CHARS,
+                None,
+            )
+        } else {
+            self.exact_dictionary_matches(reading)
+        };
         let (user_exact, system_exact): (Vec<_>, Vec<_>) = dictionary
             .exact
             .into_iter()
@@ -710,12 +746,16 @@ impl InputMethodEngine {
     /// is discarded, so its auto-suggest inference is suppressed.
     fn refine_through_composing(&mut self, key: &KeyEvent) -> EngineResult {
         let filter = self.state.filter();
+        let lookup = self
+            .state
+            .conversion_lookup()
+            .unwrap_or(ConversionLookup::FULL);
         let result =
             self.in_composing(filter.is_some(), |engine| engine.process_key_composing(key));
         if let Some(source) = filter
             && matches!(self.state, InputState::Composing { .. })
         {
-            return self.start_conversion_with_filter(source);
+            return self.start_conversion_with_filter(source, lookup);
         }
         result
     }
@@ -727,10 +767,14 @@ impl InputMethodEngine {
     /// inference is suppressed.
     fn rebreak_conversion(&mut self) -> EngineResult {
         let filter = self.state.filter();
+        let lookup = self
+            .state
+            .conversion_lookup()
+            .unwrap_or(ConversionLookup::FULL);
         self.in_composing(true, |engine| engine.insert_chunk_break());
         match filter {
-            Some(source) => self.start_conversion_with_filter(source),
-            None => self.start_conversion(LearningLookup::Use),
+            Some(source) => self.start_conversion_with_filter(source, lookup),
+            None => self.start_conversion(lookup),
         }
     }
 
@@ -852,19 +896,23 @@ impl InputMethodEngine {
         // narrowed view and chew through the list top-down.
         let prev_filter = self.state.filter();
         let prev_cursor = self.state.candidates().map(|c| c.cursor()).unwrap_or(0);
+        let lookup = self
+            .state
+            .conversion_lookup()
+            .unwrap_or(ConversionLookup::FULL);
 
         let candidates = self.build_conversion_candidates(
             &reading,
             &reading,
             "",
             self.config.num_candidates,
-            LearningLookup::Use,
+            lookup,
         );
         if candidates.is_empty() {
             return self.cancel_conversion();
         }
         let candidate_list = self.to_conversion_candidate_list(candidates, &reading);
-        let mut result = self.enter_conversion_state(&reading, candidate_list);
+        let mut result = self.enter_conversion_state(&reading, candidate_list, lookup);
 
         if let Some(source) = prev_filter {
             result = self.apply_candidate_filter(source);

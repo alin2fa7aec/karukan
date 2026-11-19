@@ -103,6 +103,32 @@ impl InputMethodEngine {
                 >= self.config.live_min_chars
     }
 
+    /// What Space (and Down) converts with. With `prediction_key = "tab"` it
+    /// is only what was typed; the longer readings are Tab's.
+    pub(super) fn space_lookup(&self) -> ConversionLookup {
+        match self.config.prediction_key {
+            PredictionKey::Space => ConversionLookup::FULL,
+            PredictionKey::Tab => ConversionLookup {
+                prediction: PredictionLookup::Skip,
+                ..ConversionLookup::FULL
+            },
+        }
+    }
+
+    /// What Tab converts with. With `prediction_key = "tab"` it is everything,
+    /// predictive matches included (mozc's PredictAndConvert). Otherwise
+    /// Tab bypasses the learning cache so stale or unwanted learned entries
+    /// can be escaped.
+    fn tab_lookup(&self) -> ConversionLookup {
+        match self.config.prediction_key {
+            PredictionKey::Space => ConversionLookup {
+                learning: LearningLookup::Skip,
+                ..ConversionLookup::FULL
+            },
+            PredictionKey::Tab => ConversionLookup::FULL,
+        }
+    }
+
     /// Build the auto-suggest result (preedit, candidates, aux), ordered
     /// learning → model → dictionary. The model candidates keep the list
     /// non-empty, so the candidate window — whose aux line shows the raw
@@ -296,11 +322,8 @@ impl InputMethodEngine {
                 let space = self.space_char();
                 self.input_char(space)
             }
-            // Tab triggers conversion that bypasses the learning cache, so users
-            // can escape stale or unwanted learned entries (mozc binds Tab to a
-            // different conversion path — PredictAndConvert — in the same spirit).
-            Keysym::TAB => self.start_conversion(LearningLookup::Skip),
-            Keysym::SPACE | Keysym::DOWN => self.start_conversion(LearningLookup::Use),
+            Keysym::TAB => self.start_conversion(self.tab_lookup()),
+            Keysym::SPACE | Keysym::DOWN => self.start_conversion(self.space_lookup()),
             Keysym::LEFT => self.move_caret_left(),
             Keysym::RIGHT => self.move_caret_right(),
             Keysym::HOME => self.move_caret_home(),

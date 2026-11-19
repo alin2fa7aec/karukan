@@ -7,7 +7,7 @@ use karukan_engine::{
     RomajiConverter, SymbolStyle, WidthRules,
 };
 
-use crate::config::settings::{CandidateWindow, SpaceStyle, StrategyMode};
+use crate::config::settings::{CandidateWindow, PredictionKey, SpaceStyle, StrategyMode};
 
 use super::super::candidate::CandidateList;
 use super::super::preedit::Preedit;
@@ -116,6 +116,8 @@ pub struct EngineConfig {
     /// Japanese chars the reading needs before live conversion starts
     /// (1 = from the first char; 0 acts the same)
     pub live_min_chars: usize,
+    /// Which key offers the predictive matches (see [`PredictionKey`])
+    pub prediction_key: PredictionKey,
     /// When the candidate window (aux line included) opens
     pub candidate_window: CandidateWindow,
     /// Which symbol the `,` `.` `/` `[` `]` keys type
@@ -156,6 +158,7 @@ impl EngineConfig {
             verbose: settings.display.verbose,
             live_conversion: settings.conversion.live_conversion,
             live_min_chars: settings.conversion.live_min_chars,
+            prediction_key: settings.conversion.prediction_key,
             candidate_window: settings.display.candidate_window,
             symbol: settings.symbol.style(),
             width: settings.width,
@@ -185,6 +188,7 @@ impl Default for EngineConfig {
             verbose: false,
             live_conversion: false,
             live_min_chars: 1,
+            prediction_key: PredictionKey::default(),
             candidate_window: CandidateWindow::default(),
             symbol: SymbolStyle::default(),
             width: WidthRules::default(),
@@ -360,11 +364,38 @@ pub(in crate::core) enum FilterDirection {
 }
 
 /// Whether a conversion consults the learning cache. Tab asks for
-/// [`Self::Skip`] so a noisy history can be escaped.
+/// [`Self::Skip`] under the default `prediction_key = "space"`, so a noisy
+/// history can be escaped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::core) enum LearningLookup {
+pub enum LearningLookup {
     Use,
     Skip,
+}
+
+/// Whether a conversion offers candidates whose reading extends the typed
+/// one (けいざい → 経済移民, from the dictionaries and the learning cache).
+/// [`Self::Skip`] keeps the list to answers for exactly what was typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PredictionLookup {
+    Use,
+    Skip,
+}
+
+/// What a conversion's mixed list draws on, decided by the key that
+/// started it. Rebuilding the same conversion (Ctrl+J, deleting a learning
+/// entry) reuses it, so the list keeps the shape the key asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConversionLookup {
+    pub learning: LearningLookup,
+    pub prediction: PredictionLookup,
+}
+
+impl ConversionLookup {
+    /// Learning and predictive matches both included: Space by default.
+    pub const FULL: Self = Self {
+        learning: LearningLookup::Use,
+        prediction: PredictionLookup::Use,
+    };
 }
 
 /// Timing and adaptive model selection metrics for conversion

@@ -120,7 +120,7 @@ fn conversion_list_gets_all_predictive_candidates() {
     )));
 
     let conversion: Vec<String> = engine
-        .build_conversion_candidates("わせ", "わせ", "", 1, LearningLookup::Use)
+        .build_conversion_candidates("わせ", "わせ", "", 1, ConversionLookup::FULL)
         .into_iter()
         .map(|c| c.text)
         .collect();
@@ -245,4 +245,147 @@ fn conversion_ranks_exact_matches_ahead_of_predictive_across_dictionaries() {
         ["経財", "経済", "軽罪", "経済移民", "経済学"],
         "{texts:?}"
     );
+}
+
+/// Engine with `prediction_key = "tab"`, わせ (exact) and わせだ (longer) in the
+/// system dictionary, and 早稲田大学 learned under a longer reading.
+fn prediction_tab_engine() -> InputMethodEngine {
+    let mut engine = InputMethodEngine::with_config(EngineConfig {
+        prediction_key: PredictionKey::Tab,
+        ..EngineConfig::default()
+    });
+    engine.dicts.system = Some(std::sync::Arc::new(dict_from_json(
+        r#"[
+            {"reading":"わせ","candidates":[{"surface":"和瀬","score":5000.0}]},
+            {"reading":"わせだ","candidates":[{"surface":"早稲田","score":1000.0}]}
+        ]"#,
+    )));
+    let mut cache = karukan_engine::LearningCache::new(karukan_engine::LearningConfig::default());
+    cache.record("わせだだいがく", "早稲田大学");
+    engine.learning = Some(cache);
+    engine
+}
+
+/// Texts of the conversion list `key` opens on `romaji`.
+fn texts_after_key(engine: &mut InputMethodEngine, romaji: &str, key: Keysym) -> Vec<String> {
+    for ch in romaji.chars() {
+        engine.process_key(&press(ch));
+    }
+    engine.process_key(&press_key(key));
+    engine
+        .candidates()
+        .expect("conversion candidates")
+        .candidates()
+        .iter()
+        .map(|c| c.text.clone())
+        .collect()
+}
+
+#[test]
+fn prediction_tab_space_converts_only_what_was_typed() {
+    let mut engine = prediction_tab_engine();
+    let texts = texts_after_key(&mut engine, "wase", Keysym::SPACE);
+    assert!(texts.contains(&"和瀬".to_string()), "{texts:?}");
+    assert!(!texts.contains(&"早稲田".to_string()), "{texts:?}");
+    assert!(!texts.contains(&"早稲田大学".to_string()), "{texts:?}");
+}
+
+#[test]
+fn prediction_tab_tab_adds_longer_readings() {
+    let mut engine = prediction_tab_engine();
+    let texts = texts_after_key(&mut engine, "wase", Keysym::TAB);
+    assert!(texts.contains(&"和瀬".to_string()), "{texts:?}");
+    assert!(texts.contains(&"早稲田".to_string()), "{texts:?}");
+    // Tab keeps the learning cache under prediction_key = "tab".
+    assert!(texts.contains(&"早稲田大学".to_string()), "{texts:?}");
+}
+
+#[test]
+fn skipped_prediction_keeps_exact_learning() {
+    let mut engine = engine_with_learned("わせ", "和世");
+    let lookup = ConversionLookup {
+        prediction: PredictionLookup::Skip,
+        ..ConversionLookup::FULL
+    };
+    let texts: Vec<String> = engine
+        .build_conversion_candidates("わせ", "わせ", "", 9, lookup)
+        .into_iter()
+        .map(|c| c.text)
+        .collect();
+    assert!(texts.contains(&"和世".to_string()), "{texts:?}");
+}
+
+/// Texts of the conversion list on screen.
+fn shown_texts(engine: &InputMethodEngine) -> Vec<String> {
+    engine
+        .candidates()
+        .expect("conversion candidates")
+        .candidates()
+        .iter()
+        .map(|c| c.text.clone())
+        .collect()
+}
+
+#[test]
+fn prediction_tab_ctrl_j_keeps_the_lookup_of_the_key() {
+    // Space left the longer readings out; the rebuilt list must too.
+    let mut engine = prediction_tab_engine();
+    texts_after_key(&mut engine, "wase", Keysym::SPACE);
+    engine.process_key(&press_ctrl(Keysym::KEY_J));
+    let texts = shown_texts(&engine);
+    assert!(!texts.contains(&"早稲田".to_string()), "{texts:?}");
+
+    // Tab put them in; the rebuilt list keeps them.
+    let mut engine = prediction_tab_engine();
+    texts_after_key(&mut engine, "wase", Keysym::TAB);
+    engine.process_key(&press_ctrl(Keysym::KEY_J));
+    let texts = shown_texts(&engine);
+    assert!(texts.contains(&"早稲田".to_string()), "{texts:?}");
+}
+
+#[test]
+fn prediction_tab_deleting_learning_keeps_the_lookup_of_the_key() {
+    let mut engine = prediction_tab_engine();
+    engine.learning.as_mut().unwrap().record("わせ", "和世");
+    let texts = texts_after_key(&mut engine, "wase", Keysym::SPACE);
+    assert_eq!(texts.first().map(String::as_str), Some("和世"), "{texts:?}");
+
+    engine.process_key(&press_ctrl(Keysym::BACKSPACE));
+    let texts = shown_texts(&engine);
+    assert!(!texts.contains(&"和世".to_string()), "{texts:?}");
+    assert!(!texts.contains(&"早稲田".to_string()), "{texts:?}");
+}
+
+#[test]
+fn filtered_view_from_composing_carries_the_space_lookup() {
+    // A Tab conversion before must not leave its lookup behind for the
+    // view Ctrl+T opens afterwards.
+    let mut engine = prediction_tab_engine();
+    texts_after_key(&mut engine, "wase", Keysym::TAB);
+    engine.process_key(&press_key(Keysym::ESCAPE));
+    assert!(matches!(engine.state(), InputState::Composing { .. }));
+
+    engine.process_key(&press_ctrl(Keysym::KEY_T));
+    assert_eq!(
+        engine.state().conversion_lookup(),
+        Some(engine.space_lookup())
+    );
+}
+
+#[test]
+fn prediction_tab_source_views_keep_the_longer_readings() {
+    // The learning and dictionary views are searches over their source,
+    // so they keep the predictive matches Space left out of its list.
+    let mut engine = prediction_tab_engine();
+    texts_after_key(&mut engine, "wase", Keysym::SPACE);
+
+    engine.process_key(&press_ctrl(Keysym::KEY_T));
+    assert_eq!(engine.state().filter(), Some(CandidateSource::Learning));
+    let texts = shown_texts(&engine);
+    assert!(texts.contains(&"早稲田大学".to_string()), "{texts:?}");
+
+    engine.process_key(&press_ctrl(Keysym::KEY_T));
+    assert_eq!(engine.state().filter(), Some(CandidateSource::Dictionary));
+    let texts = shown_texts(&engine);
+    assert!(texts.contains(&"早稲田".to_string()), "{texts:?}");
 }

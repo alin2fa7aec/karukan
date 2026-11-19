@@ -46,7 +46,7 @@ fn registered_phrase_surfaces_date_candidates() {
         "きょう",
     );
     let candidates =
-        engine.build_conversion_candidates("きょう", "きょう", "", 9, LearningLookup::Use);
+        engine.build_conversion_candidates("きょう", "きょう", "", 9, ConversionLookup::FULL);
     let date = candidates
         .iter()
         .find(|c| c.source == CandidateSource::Date && slash_date(&c.text))
@@ -78,7 +78,7 @@ fn default_settings_carry_the_shipped_phrases() {
     let config = EngineConfig::from_settings(&settings);
     let mut engine = date_engine(config.date, "きょう");
     let candidates =
-        engine.build_conversion_candidates("きょう", "きょう", "", 9, LearningLookup::Use);
+        engine.build_conversion_candidates("きょう", "きょう", "", 9, ConversionLookup::FULL);
     assert!(
         candidates
             .iter()
@@ -91,8 +91,13 @@ fn default_settings_carry_the_shipped_phrases() {
 fn unregistered_reading_gets_no_date_candidates() {
     let settings = Settings::default();
     let mut engine = date_engine(settings.date.clone(), "こんにちは");
-    let candidates =
-        engine.build_conversion_candidates("こんにちは", "こんにちは", "", 9, LearningLookup::Use);
+    let candidates = engine.build_conversion_candidates(
+        "こんにちは",
+        "こんにちは",
+        "",
+        9,
+        ConversionLookup::FULL,
+    );
     assert!(
         !candidates.iter().any(|c| c.source == CandidateSource::Date),
         "date candidate leaked for a plain word: {candidates:?}"
@@ -117,6 +122,7 @@ fn committing_a_date_candidate_records_no_learning() {
         candidates: CandidateList::new(vec![date]),
         reading: "きょう".to_string(),
         filter: None,
+        lookup: ConversionLookup::FULL,
     };
 
     let result = engine.process_key(&press_key(Keysym::RETURN));
