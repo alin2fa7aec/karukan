@@ -35,7 +35,8 @@ impl InputMethodEngine {
         let convert = !self.suppress_suggest
             && !full_reading.is_empty()
             && (self.mode.current() != InputMode::Alphabet
-                || karukan_engine::contains_kana(&full_reading));
+                || karukan_engine::contains_kana(&full_reading))
+            && self.live_min_chars_reached(&full_reading);
         let candidates = if convert {
             let reading = full_reading.clone();
             self.chunked_auto_suggest()
@@ -80,6 +81,26 @@ impl InputMethodEngine {
         // Normal auto-suggest: show hiragana preedit
         self.live.shown = false;
         self.suggest_result(candidates, &reading)
+    }
+
+    /// Whether `reading` is long enough for live conversion to run
+    /// (`live_min_chars`). Only Japanese chars count: they measure how much
+    /// reading the user has typed, while the unfired romaji tail is not a
+    /// reading yet and a symbol or digit says little about the word.
+    /// Evaluated per keystroke, so backspacing below the threshold drops
+    /// back to kana, the same as typing the shorter reading fresh. Without
+    /// live conversion the gate is off: the model's suggestion then only
+    /// sits in the candidate list, and there is nothing to start.
+    /// A threshold of 1 or less is the gate switched off: an empty reading
+    /// never converts anyway, and a reading with no Japanese char never
+    /// reaches the model, so 0 would differ from 1 only in whether such a
+    /// reading builds its chunk grid. Leaving the gate off keeps that grid
+    /// as it was before the setting existed.
+    fn live_min_chars_reached(&self, reading: &str) -> bool {
+        self.config.live_min_chars <= 1
+            || !self.live.enabled
+            || reading.chars().filter(|&c| chunk::is_japanese(c)).count()
+                >= self.config.live_min_chars
     }
 
     /// Build the auto-suggest result (preedit, candidates, aux), ordered

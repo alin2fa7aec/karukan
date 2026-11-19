@@ -113,6 +113,9 @@ pub struct EngineConfig {
     pub verbose: bool,
     /// Whether live conversion is enabled at engine startup
     pub live_conversion: bool,
+    /// Japanese chars the reading needs before live conversion starts
+    /// (1 = from the first char; 0 acts the same)
+    pub live_min_chars: usize,
     /// When the candidate window (aux line included) opens
     pub candidate_window: CandidateWindow,
     /// Which symbol the `,` `.` `/` `[` `]` keys type
@@ -152,6 +155,7 @@ impl EngineConfig {
             strategy: settings.conversion.strategy,
             verbose: settings.display.verbose,
             live_conversion: settings.conversion.live_conversion,
+            live_min_chars: settings.conversion.live_min_chars,
             candidate_window: settings.display.candidate_window,
             symbol: settings.symbol.style(),
             width: settings.width,
@@ -180,6 +184,7 @@ impl Default for EngineConfig {
             strategy: StrategyMode::default(),
             verbose: false,
             live_conversion: false,
+            live_min_chars: 1,
             candidate_window: CandidateWindow::default(),
             symbol: SymbolStyle::default(),
             width: WidthRules::default(),

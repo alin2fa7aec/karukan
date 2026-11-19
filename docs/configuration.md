@@ -5,6 +5,7 @@
 ```toml
 [conversion]
 live_conversion = true          # ライブ変換を起動時に有効化（Ctrl+Shift+L で実行中も切替。既定ON）
+live_min_chars = 1              # 読みがこの文字数に届くまでライブ変換を始めない (1 = 1文字目から)
 chunk_chars = 30                # 一度にAI変換する Chunk の最大文字数（[Chunk](chunking.md) 参照）
 chunk_symbols = 1               # Chunk に残せる記号（、。！？など）の数
 chunk_digits = 0                # Chunk に残せる数字の桁数（0 = 数字はAI変換にかけない）
@@ -88,6 +89,8 @@ my-model = "/home/user/models/my-model.gguf"
 ## Live Conversion
 
 入力と同時にかな漢字変換の結果をプリエディットへリアルタイム表示します（Spaceを押さずに変換が進む）。`Ctrl+Shift+L` でON/OFFを切り替えられ、既定では `live_conversion = true` で有効です。
+
+`live_min_chars` を設定すると、読みがその文字数に届くまではライブ変換を始めず、ひらがなのまま辞書や学習の候補を出します。たとえば `live_min_chars = 3` なら「あい」まではひらがなで、「あいう」と打った時点から変換が始まります。数えるのはかなと漢字だけで、未確定のローマ字 (「わせd」の `d`) や記号は含めません。打鍵ごとに判定するので、BackSpace で文字数を下回ればひらがなに戻ります。Space での変換と、ライブ変換が OFF のときの候補には影響しません。既定の `1` は1文字目から変換します。
 
 入力中の文が長くなっても変換時間が伸びないよう、変換は一定の長さごとの Chunk に区切って実行されます。Chunk の決まり方、表示のちらつきを止める手動区切り、`chunk_*` の調整方法は [Chunk](chunking.md) を参照してください。
 

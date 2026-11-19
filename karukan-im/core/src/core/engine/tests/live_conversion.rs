@@ -468,3 +468,67 @@ fn test_ctrl_shift_l_shows_aux_text() {
     );
     assert!(has_aux);
 }
+
+/// Live engine that starts converting only at `min` Japanese chars.
+fn make_min_chars_engine(min: usize) -> InputMethodEngine {
+    let mut engine = InputMethodEngine::with_config(EngineConfig {
+        live_min_chars: min,
+        ..EngineConfig::default()
+    });
+    engine.live.enabled = true;
+    engine
+}
+
+#[test]
+fn test_live_min_chars_holds_conversion_until_reached() {
+    // Without a model each chunk falls back to its reading, but the chunks
+    // are still built, so their presence shows whether conversion ran.
+    let mut engine = make_min_chars_engine(3);
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    assert!(engine.chunks.is_empty());
+    engine.process_key(&press('u'));
+    let readings: Vec<&str> = engine.chunks.iter().map(|c| c.reading.as_str()).collect();
+    assert_eq!(readings, vec!["あいう"]);
+
+    // Backspacing below the threshold drops back to kana.
+    engine.process_key(&press_key(Keysym::BACKSPACE));
+    assert!(engine.chunks.is_empty());
+    assert_eq!(engine.preedit().unwrap().text(), "あい");
+}
+
+#[test]
+fn test_live_min_chars_ignores_romaji_tail() {
+    // 「あいk」: the unfired `k` is not a Japanese char, so 2 < 3.
+    let mut engine = make_min_chars_engine(3);
+    for ch in ['a', 'i', 'k'] {
+        engine.process_key(&press(ch));
+    }
+    assert!(engine.chunks.is_empty());
+    engine.process_key(&press('a'));
+    assert!(!engine.chunks.is_empty());
+}
+
+#[test]
+fn test_live_min_chars_off_without_live_conversion() {
+    let mut engine = InputMethodEngine::with_config(EngineConfig {
+        live_min_chars: 3,
+        ..EngineConfig::default()
+    });
+    // The first keystroke from Empty never runs auto-suggest, so type two.
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    assert!(!engine.chunks.is_empty());
+}
+
+#[test]
+fn test_live_min_chars_of_one_or_less_leaves_the_gate_off() {
+    // A digit-only reading has no Japanese char, so a counting gate would
+    // hold it back even at 1; 0 and 1 both leave it converting as before.
+    for min in [0, 1] {
+        let mut engine = make_min_chars_engine(min);
+        engine.process_key(&press('1'));
+        engine.process_key(&press('2'));
+        assert!(!engine.chunks.is_empty(), "live_min_chars = {min}");
+    }
+}

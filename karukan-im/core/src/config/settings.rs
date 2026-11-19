@@ -212,6 +212,10 @@ pub struct ConversionSettings {
     pub n_threads: u32,
     /// Enable live conversion at startup (Ctrl+Shift+L still toggles at runtime)
     pub live_conversion: bool,
+    /// Japanese chars the reading needs before live conversion starts
+    /// (1 = from the first char). Below it the preedit stays kana and the
+    /// model is not called while typing; Space still converts.
+    pub live_min_chars: usize,
 }
 
 /// Learning cache settings

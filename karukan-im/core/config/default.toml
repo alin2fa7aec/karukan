@@ -57,6 +57,10 @@ light_model = "jinen-v2-xsmall-q8"
 n_threads = 4
 # 起動時にライブ変換を有効にする（Ctrl+Shift+L で実行中も切替可能）
 live_conversion = true
+# 読みがこの文字数に届くまでライブ変換を始めない (1 = 1文字目から変換する)。
+# 数えるのはかなと漢字だけで、未確定のローマ字や記号は含めない。
+# 届くまではひらがなのまま辞書の候補を出す。Space での変換には影響しない。
+live_min_chars = 1
 # ユーザー辞書: ~/.local/share/karukan-im/user_dicts/ に辞書ファイルを配置（Mozc TSV or KRKN binary）
 
 # 変換モデル。model / light_model はここのキーを参照する。値は 2 通り:
