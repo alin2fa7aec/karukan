@@ -235,6 +235,10 @@ pub struct ConversionSettings {
     /// Tab skips the learning cache) or `tab` (Space converts only what was
     /// typed, Tab adds them with learning).
     pub prediction_key: PredictionKey,
+    /// A printable key typed during a conversion commits the selected
+    /// candidate and starts the next input with that key. Off: the key
+    /// extends the reading being converted.
+    pub commit_on_type_in_conversion: bool,
 }
 
 /// Learning cache settings

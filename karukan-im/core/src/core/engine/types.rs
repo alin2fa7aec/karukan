@@ -118,6 +118,10 @@ pub struct EngineConfig {
     pub live_min_chars: usize,
     /// Which key offers the predictive matches (see [`PredictionKey`])
     pub prediction_key: PredictionKey,
+    /// A printable key typed during a conversion commits the selected
+    /// candidate and starts the next input with it, instead of extending
+    /// the reading
+    pub commit_on_type_in_conversion: bool,
     /// When the candidate window (aux line included) opens
     pub candidate_window: CandidateWindow,
     /// Which symbol the `,` `.` `/` `[` `]` keys type
@@ -159,6 +163,7 @@ impl EngineConfig {
             live_conversion: settings.conversion.live_conversion,
             live_min_chars: settings.conversion.live_min_chars,
             prediction_key: settings.conversion.prediction_key,
+            commit_on_type_in_conversion: settings.conversion.commit_on_type_in_conversion,
             candidate_window: settings.display.candidate_window,
             symbol: settings.symbol.style(),
             width: settings.width,
@@ -189,6 +194,7 @@ impl Default for EngineConfig {
             live_conversion: false,
             live_min_chars: 1,
             prediction_key: PredictionKey::default(),
+            commit_on_type_in_conversion: false,
             candidate_window: CandidateWindow::default(),
             symbol: SymbolStyle::default(),
             width: WidthRules::default(),

@@ -376,3 +376,116 @@ fn test_ctrl_h_passes_through_when_empty() {
     let result = engine.process_key(&press_ctrl(Keysym::KEY_H));
     assert!(!result.consumed);
 }
+
+/// Engine with `commit_on_type_in_conversion` on and 藍 as the only dictionary answer for
+/// あい, so the selected candidate is known.
+fn commit_on_type_in_conversion_engine() -> InputMethodEngine {
+    let mut engine = InputMethodEngine::with_config(EngineConfig {
+        commit_on_type_in_conversion: true,
+        ..EngineConfig::default()
+    });
+    engine.dicts.user = Some(std::sync::Arc::new(dict_from_json(
+        r#"[{"reading":"あい","candidates":[{"surface":"藍","score":1.0}]}]"#,
+    )));
+    engine
+}
+
+#[test]
+fn test_commit_on_type_in_conversion_commits_selection_and_starts_next_input() {
+    let mut engine = commit_on_type_in_conversion_engine();
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    engine.process_key(&press_key(Keysym::SPACE));
+    assert!(matches!(engine.state(), InputState::Conversion { .. }));
+
+    let result = engine.process_key(&press('u'));
+    assert!(result.consumed);
+    assert_eq!(committed(&result).as_deref(), Some("藍"));
+    // The commit comes before the new preedit, so the frontend inserts the
+    // text first.
+    let commit_at = result
+        .actions
+        .iter()
+        .position(|a| matches!(a, EngineAction::Commit(_)));
+    let preedit_at = result
+        .actions
+        .iter()
+        .position(|a| matches!(a, EngineAction::UpdatePreedit(_)));
+    assert!(commit_at < preedit_at, "{:?}", result.actions);
+    assert!(matches!(engine.state(), InputState::Composing { .. }));
+    assert_eq!(engine.input_buf.reading(), "う");
+}
+
+#[test]
+fn test_commit_on_type_in_conversion_keeps_refining_in_a_source_view() {
+    // A narrowed view is a search: the typed key belongs to the query.
+    let mut engine = commit_on_type_in_conversion_engine();
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    engine.process_key(&press_ctrl(Keysym::KEY_T));
+    assert!(engine.state().filter().is_some());
+
+    let result = engine.process_key(&press('u'));
+    assert!(committed(&result).is_none(), "{:?}", result.actions);
+    assert_eq!(engine.input_buf.reading(), "あいう");
+}
+
+#[test]
+fn test_commit_on_type_in_conversion_records_learning() {
+    let mut engine = commit_on_type_in_conversion_engine();
+    engine.learning = Some(LearningCache::new(LearningConfig::default()));
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    engine.process_key(&press_key(Keysym::SPACE));
+
+    let result = engine.process_key(&press('u'));
+    assert_eq!(committed(&result).as_deref(), Some("藍"));
+    let learned: Vec<String> = engine
+        .learning
+        .as_ref()
+        .unwrap()
+        .lookup("あい")
+        .into_iter()
+        .map(|(surface, _)| surface)
+        .collect();
+    assert_eq!(learned, vec!["藍".to_string()]);
+}
+
+#[test]
+fn test_commit_on_type_in_conversion_keeps_refining_in_emoji_mode() {
+    // `:smile` is a query: the typed key extends it.
+    let mut engine = commit_on_type_in_conversion_engine();
+    engine.process_key(&KeyEvent::press(Keysym(b':' as u32)));
+    for ch in ['s', 'm', 'i', 'l'] {
+        engine.process_key(&press(ch));
+    }
+    engine.process_key(&press_key(Keysym::SPACE));
+    assert!(matches!(engine.state(), InputState::Conversion { .. }));
+    assert_eq!(engine.mode.current(), InputMode::Emoji);
+
+    let result = engine.process_key(&press('e'));
+    assert!(committed(&result).is_none(), "{:?}", result.actions);
+    assert_eq!(engine.input_buf.reading(), ":smile");
+}
+
+#[test]
+fn test_commit_on_type_in_conversion_never_swallows_the_key() {
+    // Should the commit not happen (an empty candidate text), the key
+    // refines instead of being dropped.
+    let mut engine = commit_on_type_in_conversion_engine();
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    engine.process_key(&press_key(Keysym::SPACE));
+    if let InputState::Conversion { candidates, .. } = &mut engine.state {
+        *candidates = CandidateList::new(vec![Candidate {
+            text: String::new(),
+            reading: Some("あい".to_string()),
+            source: None,
+            description: None,
+        }]);
+    }
+
+    let result = engine.process_key(&press('u'));
+    assert!(committed(&result).is_none(), "{:?}", result.actions);
+    assert_eq!(engine.input_buf.reading(), "あいう");
+}

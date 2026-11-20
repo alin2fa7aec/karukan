@@ -728,7 +728,12 @@ impl InputMethodEngine {
                 // A printable character refines instead of committing:
                 // the reading grows and the suggestion rewrites in place,
                 // keeping any active source filter.
+                // With `commit_on_type_in_conversion` it commits the
+                // selection and starts the next input instead.
                 if key.to_char().is_some() && !key.modifiers.control_key {
+                    if self.commits_on_type() {
+                        return self.commit_and_type(key);
+                    }
                     return self.refine_through_composing(key);
                 }
 
@@ -757,6 +762,34 @@ impl InputMethodEngine {
         {
             return self.start_conversion_with_filter(source, lookup);
         }
+        result
+    }
+
+    /// Whether a printable key commits the conversion rather than refining
+    /// it. A narrowed source view and the emoji picker keep refining: both
+    /// are searches, where the typed key is part of the query.
+    fn commits_on_type(&self) -> bool {
+        self.config.commit_on_type_in_conversion
+            && self.state.filter().is_none()
+            && self.mode.current() != InputMode::Emoji
+    }
+
+    /// Commit the selected candidate, then feed `key` to the Empty state as
+    /// the first key of the next input. One result carries both, the commit
+    /// first, so the frontend inserts the text before showing the new
+    /// preedit.
+    ///
+    /// The commit cannot fail in practice: the selected text falls back to
+    /// the reading, which a conversion never has empty. Should it not
+    /// happen all the same (an empty candidate text), the key refines as it
+    /// would without the setting rather than being swallowed.
+    fn commit_and_type(&mut self, key: &KeyEvent) -> EngineResult {
+        let mut result = self.commit_conversion();
+        if !matches!(self.state, InputState::Empty) {
+            return self.refine_through_composing(key);
+        }
+        let next = self.process_key_empty(key);
+        result.actions.extend(next.actions);
         result
     }
 

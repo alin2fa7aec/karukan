@@ -65,6 +65,10 @@ live_min_chars = 1
 # "space": Space が完全一致の候補の後ろに並べる。Tab は学習履歴を使わずに変換する。
 # "tab": Space は打った読みと完全一致する候補だけで変換し、Tab がそれらも含めて変換する。このとき Tab でも学習履歴を使う。
 prediction_key = "space"
+# true にすると、変換中に文字キーを打ったとき、選んでいる候補を確定してから、その文字で次の入力を始める。
+# false では、打った文字を変換中の読みの続きとして扱う。
+# Ctrl+T などで候補の種類を絞っているときと、絵文字の入力中は、どちらの設定でも読みの続きになる。
+commit_on_type_in_conversion = false
 # ユーザー辞書: ~/.local/share/karukan-im/user_dicts/ に辞書ファイルを配置（Mozc TSV or KRKN binary）
 
 # 変換モデル。model / light_model はここのキーを参照する。値は 2 通り:
